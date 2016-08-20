@@ -70,8 +70,10 @@ func (srv *Server) AddHostKey(r io.Reader) error {
 		return err
 	}
 	srv.HostKeyCount++
-	cfg := srv.ServerConfig
-	cfg.AddHostKey(private)
+	if srv.ServerConfig == nil {
+		srv.ServerConfig = &ssh.ServerConfig{}
+	}
+	srv.ServerConfig.AddHostKey(private)
 	return nil
 }
 
