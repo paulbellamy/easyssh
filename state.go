@@ -1,4 +1,4 @@
-package ssh
+package easyssh
 
 // A ConnState represents the state of a client connection to a server.
 // It's used by the optional Server.ConnState hook.

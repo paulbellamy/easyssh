@@ -1,4 +1,4 @@
-# SSH
+# EasySSH
 
 Easier ssh server wrapper, net/http-style.
 

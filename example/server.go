@@ -14,8 +14,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/paulbellamy/ssh"
-	gossh "golang.org/x/crypto/ssh"
+	"github.com/paulbellamy/easyssh"
 )
 
 func main() {
@@ -23,30 +22,18 @@ func main() {
 	flag.Parse()
 
 	// Configure the server
-	server := &ssh.Server{
+	server := &easyssh.Server{
 		Addr:    *addr,
-		Handler: &topic{clients: make(map[int]ssh.Channel)},
+		Handler: &topic{clients: make(map[int]easyssh.Channel)},
 
 		// ConnState specifies an optional callback function that is
 		// called when a client connection changes state. See the
 		// ConnState type and associated constants for details.
-		ConnState: func(conn net.Conn, state ssh.ConnState) {
+		ConnState: func(conn net.Conn, state easyssh.ConnState) {
 			log.Printf("[ConnState] %v: %s", conn.RemoteAddr(), state)
 		},
 
-		ServerConfig: &gossh.ServerConfig{
-			NoClientAuth: true,
-			/*
-				PasswordCallback: func(c gossh.ConnMetadata, pass []byte) (*gossh.Permissions, error) {
-					// Should use constant-time compare (or better, salt+hash) in
-					// a production setting.
-					if c.User() == "testuser" && string(pass) == "tiger" {
-						return nil, nil
-					}
-					return nil, fmt.Errorf("password rejected for %q", c.User())
-				},
-			*/
-		},
+		ServerConfig: easyssh.PublicConfig(),
 	}
 
 	// Generate a random key for now
@@ -74,11 +61,11 @@ func main() {
 
 // Topic relays all messages from connected clients to all other clients
 type topic struct {
-	clients map[int]ssh.Channel
+	clients map[int]easyssh.Channel
 	sync.RWMutex
 }
 
-func (t *topic) ServeSSH(p *ssh.Permissions, c ssh.Channel, r <-chan *ssh.Request) {
+func (t *topic) ServeSSH(p *easyssh.Permissions, c easyssh.Channel, r <-chan *easyssh.Request) {
 	t.Lock()
 	id := len(t.clients)
 	t.clients[id] = c

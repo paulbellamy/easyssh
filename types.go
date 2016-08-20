@@ -1,4 +1,4 @@
-package ssh
+package easyssh
 
 import (
 	"context"
