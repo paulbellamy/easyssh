@@ -1,6 +1,9 @@
+// A simple public chat server, over ssh. Messages from one client are sent to
+// all other connected clients.
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -9,10 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 
 	"github.com/paulbellamy/ssh"
 	gossh "golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 func main() {
@@ -22,7 +25,7 @@ func main() {
 	// Configure the server
 	server := &ssh.Server{
 		Addr:    *addr,
-		Handler: ssh.HandlerFunc(handle),
+		Handler: &topic{clients: make(map[int]ssh.Channel)},
 
 		// ConnState specifies an optional callback function that is
 		// called when a client connection changes state. See the
@@ -32,14 +35,17 @@ func main() {
 		},
 
 		ServerConfig: &gossh.ServerConfig{
-			PasswordCallback: func(c gossh.ConnMetadata, pass []byte) (*gossh.Permissions, error) {
-				// Should use constant-time compare (or better, salt+hash) in
-				// a production setting.
-				if c.User() == "testuser" && string(pass) == "tiger" {
-					return nil, nil
-				}
-				return nil, fmt.Errorf("password rejected for %q", c.User())
-			},
+			NoClientAuth: true,
+			/*
+				PasswordCallback: func(c gossh.ConnMetadata, pass []byte) (*gossh.Permissions, error) {
+					// Should use constant-time compare (or better, salt+hash) in
+					// a production setting.
+					if c.User() == "testuser" && string(pass) == "tiger" {
+						return nil, nil
+					}
+					return nil, fmt.Errorf("password rejected for %q", c.User())
+				},
+			*/
 		},
 	}
 
@@ -66,17 +72,38 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 
-func handle(p *ssh.Permissions, c ssh.Channel, r <-chan *ssh.Request) {
-	term := terminal.NewTerminal(c, "> ")
+// Topic relays all messages from connected clients to all other clients
+type topic struct {
+	clients map[int]ssh.Channel
+	sync.RWMutex
+}
+
+func (t *topic) ServeSSH(p *ssh.Permissions, c ssh.Channel, r <-chan *ssh.Request) {
+	t.Lock()
+	id := len(t.clients)
+	t.clients[id] = c
+	t.Unlock()
+
+	defer func() {
+		t.Lock()
+		delete(t.clients, id)
+		t.Unlock()
+	}()
 
 	go func() {
 		defer c.Close()
-		for {
-			line, err := term.ReadLine()
-			if err != nil {
-				break
+		scanner := bufio.NewScanner(c)
+		fmt.Fprintf(c, "> ")
+		for scanner.Scan() {
+			t.RLock()
+			for otherID, client := range t.clients {
+				if id != otherID {
+					client.Write(scanner.Bytes())
+					fmt.Fprintln(client)
+				}
 			}
-			fmt.Println(line)
+			t.RUnlock()
+			fmt.Fprintf(c, "> ")
 		}
 	}()
 
